@@ -113,4 +113,35 @@ export class QuizzesService {
       order: { submitted_at: 'DESC' },
     });
   }
+
+  async updateQuiz(quizId: string, title: string, passingScore: number, questions: any[]): Promise<Quiz> {
+    const quiz = await this.findQuizById(quizId);
+    if (title) quiz.title = title;
+    if (passingScore) quiz.passing_score = passingScore;
+    await this.quizRepo.save(quiz);
+
+    if (questions) {
+      await this.questionRepo.delete({ quiz_id: quizId });
+      if (questions.length > 0) {
+        const qEntities = questions.map((q) =>
+          this.questionRepo.create({
+            quiz_id: quizId,
+            prompt: q.prompt,
+            question_type: q.question_type,
+            options: q.options,
+            correct_answer: q.correct_answer,
+          }),
+        );
+        await this.questionRepo.save(qEntities);
+      }
+    }
+
+    return this.findQuizById(quizId);
+  }
+
+  async deleteQuiz(quizId: string): Promise<void> {
+    const quiz = await this.findQuizById(quizId);
+    await this.questionRepo.delete({ quiz_id: quizId });
+    await this.quizRepo.remove(quiz);
+  }
 }

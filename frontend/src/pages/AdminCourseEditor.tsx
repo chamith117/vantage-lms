@@ -21,6 +21,20 @@ export const AdminCourseEditor: React.FC = () => {
   const [videoUrl, setVideoUrl] = useState('');
   const [uploading, setUploading] = useState(false);
 
+  const [quizTitle, setQuizTitle] = useState('');
+  const [quizPassingScore, setQuizPassingScore] = useState(70);
+  const [quizQuestions, setQuizQuestions] = useState<Array<{
+    prompt: string;
+    question_type: 'multiple_choice' | 'true_false';
+    options: string[];
+    correct_answer: string;
+  }>>([]);
+
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+  const [editingModuleTitle, setEditingModuleTitle] = useState('');
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [editingLesson, setEditingLesson] = useState<any>(null);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -89,23 +103,132 @@ export const AdminCourseEditor: React.FC = () => {
   const handleAddLesson = async (moduleId: string) => {
     if (!lessonTitle.trim()) return;
     try {
-      await api.post(`/api/courses/modules/${moduleId}/lessons`, {
+      const lessonRes = await api.post(`/api/courses/modules/${moduleId}/lessons`, {
         title: lessonTitle,
         content_type: contentType,
-        content_body: contentBody,
+        content_body: contentType === 'quiz' ? (quizTitle || lessonTitle) : contentBody,
         file_url: uploadedFileUrl || null,
         video_url: videoUrl || null,
         order: 1,
         duration_minutes: 15,
       });
+
+      if (contentType === 'quiz' && quizQuestions.length > 0) {
+        await api.post('/api/quizzes', {
+          lesson_id: lessonRes.data.id,
+          title: quizTitle || lessonTitle,
+          passing_score: quizPassingScore,
+          questions: quizQuestions,
+        });
+      }
+
       const refreshRes = await api.get(`/api/courses/${createdCourse.id}`);
       setCreatedCourse(refreshRes.data);
       setLessonTitle('');
       setContentBody('');
       setUploadedFileUrl('');
       setVideoUrl('');
+      setQuizTitle('');
+      setQuizPassingScore(70);
+      setQuizQuestions([]);
     } catch (err) {
       console.error('Add lesson error', err);
+    }
+  };
+
+  const addQuizQuestion = () => {
+    setQuizQuestions([...quizQuestions, {
+      prompt: '',
+      question_type: 'multiple_choice',
+      options: ['', '', '', ''],
+      correct_answer: '',
+    }]);
+  };
+
+  const updateQuizQuestion = (index: number, field: string, value: any) => {
+    setQuizQuestions((prev) => prev.map((q, i) => {
+      if (i !== index) return q;
+      const updated = { ...q, [field]: value };
+      if (field === 'question_type' && value === 'true_false') {
+        updated.options = ['True', 'False'];
+        if (!['True', 'False'].includes(updated.correct_answer)) {
+          updated.correct_answer = 'True';
+        }
+      }
+      return updated;
+    }));
+  };
+
+  const updateQuizOption = (qIndex: number, oIndex: number, value: string) => {
+    setQuizQuestions((prev) => prev.map((q, i) => {
+      if (i !== qIndex) return q;
+      const newOptions = [...q.options];
+      newOptions[oIndex] = value;
+      return { ...q, options: newOptions };
+    }));
+  };
+
+  const removeQuizQuestion = (index: number) => {
+    setQuizQuestions(quizQuestions.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateModule = async (moduleId: string) => {
+    if (!editingModuleTitle.trim()) return;
+    try {
+      await api.put(`/api/courses/modules/${moduleId}`, { title: editingModuleTitle });
+      const refreshRes = await api.get(`/api/courses/${createdCourse.id}`);
+      setCreatedCourse(refreshRes.data);
+      setEditingModuleId(null);
+      setEditingModuleTitle('');
+    } catch (err) {
+      console.error('Update module error', err);
+    }
+  };
+
+  const handleDeleteModule = async (moduleId: string) => {
+    if (!confirm('Delete this module and all its lessons?')) return;
+    try {
+      await api.delete(`/api/courses/modules/${moduleId}`);
+      const refreshRes = await api.get(`/api/courses/${createdCourse.id}`);
+      setCreatedCourse(refreshRes.data);
+    } catch (err) {
+      console.error('Delete module error', err);
+    }
+  };
+
+  const handleStartEditLesson = async (lesson: any) => {
+    setEditingLessonId(lesson.id);
+    setEditingLesson({
+      title: lesson.title,
+      content_type: lesson.content_type,
+      content_body: lesson.content_body || '',
+      video_url: lesson.video_url || '',
+      file_url: lesson.file_url || '',
+      duration_minutes: lesson.duration_minutes || 15,
+    });
+  };
+
+  const handleUpdateLesson = async (lessonId: string) => {
+    if (!editingLesson?.title.trim()) return;
+    try {
+      await api.put(`/api/courses/lessons/${lessonId}`, editingLesson);
+      const refreshRes = await api.get(`/api/courses/${createdCourse.id}`);
+      setCreatedCourse(refreshRes.data);
+      setEditingLessonId(null);
+      setEditingLesson(null);
+    } catch (err) {
+      console.error('Update lesson error', err);
+    }
+  };
+
+  const handleDeleteLesson = async (lessonId: string) => {
+    if (!confirm('Delete this lesson?')) return;
+    try {
+      await api.delete(`/api/courses/lessons/${lessonId}`);
+      const refreshRes = await api.get(`/api/courses/${createdCourse.id}`);
+      setCreatedCourse(refreshRes.data);
+    } catch (err) {
+      console.error('Delete lesson error', err);
     }
   };
 
@@ -200,28 +323,78 @@ export const AdminCourseEditor: React.FC = () => {
           {/* Modules & Lessons */}
           {createdCourse.modules?.map((mod: any) => (
             <div key={mod.id} className="p-6 glass-card rounded-2xl space-y-4">
-              <div className="font-bold text-foreground text-sm border-b border-border/50 pb-2">{mod.title}</div>
+              {/* Module Header */}
+              {editingModuleId === mod.id ? (
+                <div className="flex items-center gap-2 border-b border-border/50 pb-2">
+                  <input type="text" value={editingModuleTitle} onChange={(e) => setEditingModuleTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleUpdateModule(mod.id)} className="flex-1 px-3 py-1.5 glass-input rounded-lg text-sm font-bold text-foreground" autoFocus />
+                  <button onClick={() => handleUpdateModule(mod.id)} className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold">Save</button>
+                  <button onClick={() => { setEditingModuleId(null); setEditingModuleTitle(''); }} className="px-3 py-1.5 rounded-lg glass-btn text-muted-foreground text-[10px] font-bold">Cancel</button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                  <span className="font-bold text-foreground text-sm">{mod.title}</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => { setEditingModuleId(mod.id); setEditingModuleTitle(mod.title); }} className="p-1.5 rounded-lg glass-btn text-muted-foreground hover:text-brand-500 transition-colors" title="Edit module">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleDeleteModule(mod.id)} className="p-1.5 rounded-lg glass-btn text-muted-foreground hover:text-destructive transition-colors" title="Delete module">
+                      <span className="text-xs">&#10005;</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
+              {/* Lessons */}
               {mod.lessons?.length > 0 && (
                 <div className="space-y-2">
                   {mod.lessons.map((lesson: any) => (
-                    <div key={lesson.id} className="flex items-center justify-between px-3 py-2 glass-btn rounded-xl">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        {lesson.content_type === 'url' || lesson.content_type === 'video' ? (
-                          <PlayCircle className="w-3.5 h-3.5 text-accentblue-500" />
-                        ) : lesson.content_type === 'quiz' ? (
-                          <span className="w-3.5 h-3.5 text-brand-500">&#x2753;</span>
-                        ) : (
-                          <FileText className="w-3.5 h-3.5 text-brand-500" />
+                    editingLessonId === lesson.id ? (
+                      <div key={lesson.id} className="p-3 glass-panel rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-brand-500 uppercase">Editing Lesson</span>
+                          <button onClick={() => { setEditingLessonId(null); setEditingLesson(null); }} className="text-[10px] text-muted-foreground font-semibold">Cancel</button>
+                        </div>
+                        <input type="text" value={editingLesson.title} onChange={(e) => setEditingLesson({ ...editingLesson, title: e.target.value })} placeholder="Lesson Title" className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground" />
+                        <select value={editingLesson.content_type} onChange={(e) => setEditingLesson({ ...editingLesson, content_type: e.target.value })} className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground">
+                          <option value="text">Text Document</option>
+                          <option value="video">Video Lecture</option>
+                          <option value="pdf">PDF Manual</option>
+                          <option value="quiz">Interactive Quiz</option>
+                          <option value="url">YouTube / URL Embed</option>
+                        </select>
+                        {(editingLesson.content_type === 'url' || editingLesson.content_type === 'video') && (
+                          <input type="url" value={editingLesson.video_url} onChange={(e) => setEditingLesson({ ...editingLesson, video_url: e.target.value })} placeholder="Video URL" className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground" />
                         )}
-                        {lesson.title}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full glass-badge text-muted-foreground uppercase">{lesson.content_type}</span>
-                        {lesson.video_url && (
-                          <span className="text-[10px] text-accentblue-500 truncate max-w-[120px]">{lesson.video_url}</span>
+                        {editingLesson.content_type !== 'quiz' && (
+                          <textarea rows={3} value={editingLesson.content_body} onChange={(e) => setEditingLesson({ ...editingLesson, content_body: e.target.value })} placeholder="Content body..." className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground resize-none" />
                         )}
+                        <input type="number" min={1} value={editingLesson.duration_minutes} onChange={(e) => setEditingLesson({ ...editingLesson, duration_minutes: Number(e.target.value) })} className="w-24 px-3 py-2 glass-input rounded-xl text-xs text-foreground" />
+                        <button onClick={() => handleUpdateLesson(lesson.id)} className="px-4 py-2 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white text-xs">Save Changes</button>
                       </div>
-                      <span className="text-[10px] text-muted-foreground">{lesson.duration_minutes}min</span>
-                    </div>
+                    ) : (
+                      <div key={lesson.id} className="flex items-center justify-between px-3 py-2 glass-btn rounded-xl">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {lesson.content_type === 'url' || lesson.content_type === 'video' ? (
+                            <PlayCircle className="w-3.5 h-3.5 text-accentblue-500" />
+                          ) : lesson.content_type === 'quiz' ? (
+                            <span className="w-3.5 h-3.5 text-brand-500">&#x2753;</span>
+                          ) : (
+                            <FileText className="w-3.5 h-3.5 text-brand-500" />
+                          )}
+                          {lesson.title}
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full glass-badge text-muted-foreground uppercase">{lesson.content_type}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground mr-1">{lesson.duration_minutes}min</span>
+                          <button onClick={() => handleStartEditLesson(lesson)} className="p-1.5 rounded-lg glass-btn text-muted-foreground hover:text-brand-500 transition-colors" title="Edit lesson">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button onClick={() => handleDeleteLesson(lesson.id)} className="p-1.5 rounded-lg glass-btn text-muted-foreground hover:text-destructive transition-colors" title="Delete lesson">
+                            <span className="text-[10px]">&#10005;</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
                   ))}
                 </div>
               )}
@@ -271,7 +444,78 @@ export const AdminCourseEditor: React.FC = () => {
                   </div>
                 )}
 
-                <textarea rows={3} value={contentBody} onChange={(e) => setContentBody(e.target.value)} placeholder="Lesson body text or markdown content..." className="w-full p-3 glass-input rounded-xl text-xs text-foreground resize-none" />
+                {/* Quiz Question Builder */}
+                {contentType === 'quiz' ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-muted-foreground mb-1">Quiz Title</label>
+                        <input type="text" value={quizTitle} onChange={(e) => setQuizTitle(e.target.value)} placeholder="e.g. Security Assessment" className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-muted-foreground mb-1">Passing Score (%)</label>
+                        <input type="number" min={0} max={100} value={quizPassingScore} onChange={(e) => setQuizPassingScore(Number(e.target.value))} className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground" />
+                      </div>
+                    </div>
+
+                    {quizQuestions.map((q, qIdx) => (
+                      <div key={qIdx} className="p-4 glass-panel rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-brand-500 uppercase">Question {qIdx + 1}</span>
+                          <button type="button" onClick={() => removeQuizQuestion(qIdx)} className="text-[10px] text-destructive hover:text-destructive/80 font-semibold">Remove</button>
+                        </div>
+                        <input type="text" value={q.prompt} onChange={(e) => updateQuizQuestion(qIdx, 'prompt', e.target.value)} placeholder="Question text..." className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground" />
+                        <select value={q.question_type} onChange={(e) => updateQuizQuestion(qIdx, 'question_type', e.target.value)} className="w-full px-3 py-2 glass-input rounded-xl text-xs text-foreground">
+                          <option value="multiple_choice">Multiple Choice</option>
+                          <option value="true_false">True / False</option>
+                        </select>
+                        {q.question_type === 'multiple_choice' ? (
+                          <div className="space-y-2">
+                            <div className="text-[10px] font-semibold text-muted-foreground mb-1">Options — click the circle to mark correct answer</div>
+                            {q.options.map((opt, oIdx) => {
+                              const isCorrect = q.correct_answer === opt && opt.trim() !== '';
+                              return (
+                                <div key={oIdx} onClick={() => opt.trim() && updateQuizQuestion(qIdx, 'correct_answer', opt)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${opt.trim() ? 'cursor-pointer' : ''} ${isCorrect ? 'border-emerald-500 bg-emerald-500/10' : 'border-border bg-background/50 hover:border-emerald-500/30'}`}>
+                                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${!opt.trim() ? 'border-muted-foreground/20' : isCorrect ? 'border-emerald-500 bg-emerald-500' : 'border-muted-foreground/40'}`}>
+                                    {isCorrect && <span className="text-white text-[10px] font-bold">&#10003;</span>}
+                                  </div>
+                                  <input type="text" value={opt} onChange={(e) => updateQuizOption(qIdx, oIdx, e.target.value)} onClick={(e) => e.stopPropagation()} placeholder={`Option ${oIdx + 1}`} className="flex-1 bg-transparent text-xs text-foreground outline-none" />
+                                  {isCorrect && <span className="text-[10px] font-bold text-emerald-500 uppercase">Correct</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="text-[10px] font-semibold text-muted-foreground mb-1">Select the correct answer</div>
+                            <div className="flex items-center gap-3">
+                              {['True', 'False'].map((opt) => {
+                                const isCorrect = q.correct_answer === opt;
+                                return (
+                                  <button key={opt} type="button" onClick={() => updateQuizQuestion(qIdx, 'correct_answer', opt)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold border transition-all ${isCorrect ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500' : 'border-border text-muted-foreground hover:border-emerald-500/40'}`}>
+                                    <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${isCorrect ? 'border-emerald-500 bg-emerald-500' : 'border-muted-foreground/40'}`}>
+                                      {isCorrect && <span className="text-white text-[6px]">&#10003;</span>}
+                                    </span>
+                                    {opt}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        <div className="text-[10px] text-muted-foreground">
+                          Correct answer: <span className="text-emerald-500 font-bold">{q.correct_answer || '(none selected)'}</span>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button type="button" onClick={addQuizQuestion} className="w-full py-2.5 rounded-xl font-bold glass-btn text-brand-500 text-xs hover:bg-brand-500/15 transition-all border border-dashed border-brand-500/40">
+                      + Add Question
+                    </button>
+                  </div>
+                ) : (
+                  <textarea rows={3} value={contentBody} onChange={(e) => setContentBody(e.target.value)} placeholder="Lesson body text or markdown content..." className="w-full p-3 glass-input rounded-xl text-xs text-foreground resize-none" />
+                )}
 
                 <div className="flex items-center gap-3">
                   <label className="px-4 py-2 rounded-xl glass-badge text-brand-500 text-xs font-semibold cursor-pointer hover:bg-brand-500/15 transition-all flex items-center gap-1.5">

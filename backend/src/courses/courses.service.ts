@@ -86,4 +86,28 @@ export class CoursesService {
     }
     return lesson;
   }
+
+  async updateModule(id: string, data: Partial<CourseModule>): Promise<CourseModule> {
+    const module = await this.moduleRepo.findOne({ where: { id } });
+    if (!module) throw new NotFoundException('Module not found');
+    Object.assign(module, data);
+    return this.moduleRepo.save(module);
+  }
+
+  async deleteModule(id: string): Promise<void> {
+    const module = await this.moduleRepo.findOne({ where: { id } });
+    if (!module) throw new NotFoundException('Module not found');
+    await this.moduleRepo.remove(module);
+  }
+
+  async updateLesson(id: string, data: Partial<Lesson>): Promise<Lesson> {
+    const lesson = await this.findLesson(id);
+    Object.assign(lesson, data);
+    return this.lessonRepo.save(lesson);
+  }
+
+  async deleteLesson(id: string): Promise<void> {
+    const lesson = await this.findLesson(id);
+    await this.lessonRepo.remove(lesson);
+  }
 }

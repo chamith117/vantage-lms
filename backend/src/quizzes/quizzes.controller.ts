@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { QuizzesService } from './quizzes.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -20,6 +20,21 @@ export class QuizzesController {
   @Post()
   async createQuiz(@Body() body: { lesson_id: string; title: string; passing_score?: number; questions: any[] }) {
     return this.quizzesService.createQuiz(body.lesson_id, body.title, body.passing_score, body.questions);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Put(':id')
+  async updateQuiz(@Param('id') quizId: string, @Body() body: { title: string; passing_score: number; questions: any[] }) {
+    return this.quizzesService.updateQuiz(quizId, body.title, body.passing_score, body.questions);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Delete(':id')
+  async deleteQuiz(@Param('id') quizId: string) {
+    await this.quizzesService.deleteQuiz(quizId);
+    return { message: 'Quiz deleted successfully' };
   }
 
   @Post(':id/submit')

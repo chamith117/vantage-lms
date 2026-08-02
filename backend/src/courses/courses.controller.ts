@@ -68,4 +68,34 @@ export class CoursesController {
   async addLesson(@Param('moduleId') moduleId: string, @Body() body: any) {
     return this.coursesService.addLesson(moduleId, body);
   }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Put('modules/:moduleId')
+  async updateModule(@Param('moduleId') moduleId: string, @Body() body: { title: string }) {
+    return this.coursesService.updateModule(moduleId, body);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Delete('modules/:moduleId')
+  async deleteModule(@Param('moduleId') moduleId: string) {
+    await this.coursesService.deleteModule(moduleId);
+    return { message: 'Module deleted' };
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Put('lessons/:lessonId')
+  async updateLesson(@Param('lessonId') lessonId: string, @Body() body: any) {
+    return this.coursesService.updateLesson(lessonId, body);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Delete('lessons/:lessonId')
+  async deleteLesson(@Param('lessonId') lessonId: string) {
+    await this.coursesService.deleteLesson(lessonId);
+    return { message: 'Lesson deleted' };
+  }
 }
